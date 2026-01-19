@@ -1,0 +1,11 @@
+# PocketBase binary
+pocketbase
+
+# Data directory (local dev only)
+pb_data/
+
+# Environment (use .env.example as template)
+.env
+
+# Temp files
+*.zip
