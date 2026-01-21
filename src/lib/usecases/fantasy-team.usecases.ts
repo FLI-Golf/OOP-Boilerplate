@@ -5,6 +5,7 @@ import { FantasyLeagueRepo, FantasyParticipantRepo } from '$lib/data/repos/fanta
 import { ProRepo } from '$lib/data/repos/pro.repo';
 import type { FantasyTeamCreate, DraftState } from '$lib/schemas/fantasy-team.schema';
 import { ValidationError, InvalidStateError, UnauthorizedError } from '$lib/core/errors';
+import { completeDraft } from './fantasy-league.usecases';
 
 /**
  * Use cases for Fantasy Team and Draft management.
@@ -168,7 +169,7 @@ export async function makeDraftPick(
 	participantId: string,
 	proId: string,
 	userId: string
-): Promise<FantasyTeam> {
+): Promise<{ team: FantasyTeam; draftComplete: boolean }> {
 	// Verify league is drafting
 	const league = await FantasyLeagueRepo.getById(leagueId);
 	if (league.status !== 'drafting') {
@@ -215,7 +216,6 @@ export async function makeDraftPick(
 	// Add pro to team
 	let team = await FantasyTeamRepo.getByParticipantId(participantId);
 	if (!team) {
-		// Create team if doesn't exist
 		team = await FantasyTeamRepo.create({
 			participant_id: participantId,
 			league_id: leagueId,
@@ -224,13 +224,22 @@ export async function makeDraftPick(
 	}
 	await FantasyTeamRepo.addPro(team.id, proId);
 
-	return (await getFantasyTeam(participantId))!;
+	// Check if draft is now complete
+	const newDraftState = await getDraftState(leagueId);
+	if (newDraftState.is_complete) {
+		await completeDraft(leagueId);
+	}
+
+	return {
+		team: (await getFantasyTeam(participantId))!,
+		draftComplete: newDraftState.is_complete
+	};
 }
 
 /**
  * Auto-pick for a participant (when timer expires).
  */
-export async function autoPickOnTimeout(leagueId: string): Promise<FantasyTeam | null> {
+export async function autoPickOnTimeout(leagueId: string): Promise<{ team: FantasyTeam; draftComplete: boolean } | null> {
 	const draftState = await getDraftState(leagueId);
 
 	if (draftState.is_complete) {
@@ -268,7 +277,16 @@ export async function autoPickOnTimeout(leagueId: string): Promise<FantasyTeam |
 	}
 	await FantasyTeamRepo.addPro(team.id, options.recommendation.id);
 
-	return (await getFantasyTeam(participantId))!;
+	// Check if draft is now complete
+	const newDraftState = await getDraftState(leagueId);
+	if (newDraftState.is_complete) {
+		await completeDraft(leagueId);
+	}
+
+	return {
+		team: (await getFantasyTeam(participantId))!,
+		draftComplete: newDraftState.is_complete
+	};
 }
 
 /**
